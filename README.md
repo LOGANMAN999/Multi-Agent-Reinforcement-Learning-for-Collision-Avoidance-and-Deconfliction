@@ -3,7 +3,7 @@
 
 
 ## Baseline: Harmonic Controller
-![Baseline](output.gif)
+![Baseline](output2.gif)
 
 ## Intermediate: Harmonic + GAT Deconfliction
-![Inter](output2.gif)
+![Inter](output.gif)
