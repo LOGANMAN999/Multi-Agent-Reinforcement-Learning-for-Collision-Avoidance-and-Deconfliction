@@ -5,5 +5,5 @@
 ## Baseline: Harmonic Controller
 ![Baseline](output_harmonic.gif)
 
-## Intermediate: Sheaf Deconfliction Controller
-![Inter](output_sheaf.gif)
+## Sheaf Deconfliction Controller
+![Final](output_sheaf.gif)
