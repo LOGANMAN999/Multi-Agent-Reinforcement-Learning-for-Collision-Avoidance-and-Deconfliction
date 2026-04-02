@@ -32,14 +32,7 @@ class LocalOptimizerConfig:
 
 
 class AStarGlobalLocalController:
-    """
-    Global planner: A* on an occupancy grid built from env.walls.
-    Local controller: gradient-based collision avoidance + path tracking.
 
-    Usage:
-        controller = AStarGlobalLocalController()
-        actions = controller(env)
-    """
 
     def __init__(
         self,
@@ -74,16 +67,7 @@ class AStarGlobalLocalController:
     # ------------------------------------------------------------------
 
     def __call__(self, env) -> np.ndarray:
-        """
-        Given env, return actions (N, 2).
 
-        Assumes env has:
-            - world_size: world is [-world_size, world_size]^2
-            - dt, max_speed, robot_radius
-            - n_agents, positions (N,2), goals (N,2)
-            - walls: list of segments with x1,y1,x2,y2
-            - optional _distance_point_to_segment(p,a,b)
-        """
         # Detect new episode via env.t == 0 (since reset sets t=0)
         if env.t == 0 or self._episode_id != id(env):
             self._episode_id = id(env)
@@ -690,13 +674,7 @@ class AStarGlobalLocalController:
         exclude_agent: Optional[int] = None,
         inflate_scale: float = 1.0,
     ) -> None:
-        """Mark inactive agents (agents at goal) as obstacles in a grid.
 
-        The occupancy grid is in *configuration space* for a robot center. Since
-        env._build_grid already includes a robot-radius inflation for walls, we
-        mark a disc around each inactive agent that approximates the forbidden
-        region for an active agent's center.
-        """
         H, W = grid.shape
         world_size = env.world_size
         xs = np.linspace(-world_size, world_size, W)
