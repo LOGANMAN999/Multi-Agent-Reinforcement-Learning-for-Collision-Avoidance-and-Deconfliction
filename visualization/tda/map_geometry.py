@@ -1,23 +1,3 @@
-"""
-tda/map_geometry.py
-
-Map-level geometric and topological metrics derived from the wall distance field.
-
-All functions operate on:
-    walls_xyxy : np.ndarray  shape (M, 4) — [x1, y1, x2, y2] per wall segment
-    world_size : float       — map spans [-world_size, +world_size]^2
-
-Public API
-----------
-compute_distance_field(walls_xyxy, world_size, grid_n) -> d [P]
-compute_G_eps(d, world_size, eps)                      -> G [len(eps)]
-compute_connectivity_curve(d, grid_n, eps)             -> C [len(eps)]
-bottleneck_score(C, eps, r_robot)                      -> float
-tightness_ratio(d, world_size, r_robot)                -> float
-total_wall_length(walls_xyxy)                          -> float
-map_summary(walls_xyxy, world_size, grid_n, r_robot)   -> dict
-"""
-
 from __future__ import annotations
 import numpy as np
 from scipy.ndimage import label as ndlabel
@@ -49,12 +29,6 @@ def compute_distance_field(
     world_size: float,
     grid_n: int = 200,
 ) -> np.ndarray:
-    """
-    Compute min-distance-to-any-wall at each grid point.
-
-    Returns d of shape (grid_n*grid_n,) — row-major (xy indexing).
-    Grid spans [-world_size, +world_size] along both axes.
-    """
     w = float(world_size)
     xs = np.linspace(-w, w, grid_n, dtype=np.float64)
     ys = np.linspace(-w, w, grid_n, dtype=np.float64)
@@ -78,10 +52,6 @@ def compute_G_eps(
     world_size: float,
     eps: np.ndarray,
 ) -> np.ndarray:
-    """
-    G(eps) = area of the map with distance-to-wall < eps.
-    F(eps) = total_area - G(eps) = navigable area at clearance eps.
-    """
     area_total = (2.0 * world_size) ** 2
     d_sorted = np.sort(d)
     counts = np.searchsorted(d_sorted, eps, side="left")
@@ -97,15 +67,6 @@ def compute_connectivity_curve(
     grid_n: int,
     eps: np.ndarray,
 ) -> np.ndarray:
-    """
-    C(eps) = number of 4-connected components of {x : d(x) > eps}.
-
-    Captures how the navigable space fragments as we require more clearance.
-    Bottlenecks appear as jumps in C(eps): a passage of width 2*eps_0 causes
-    C to jump from 1 to 2 at eps = eps_0.
-
-    Returns integer array of shape (len(eps),).
-    """
     d_grid = d.reshape(grid_n, grid_n)
     struct = np.ones((3, 3), dtype=np.int32)  # 8-connectivity for label
     counts = np.empty(len(eps), dtype=np.int32)
@@ -128,14 +89,6 @@ def bottleneck_score(
     eps: np.ndarray,
     r_robot: float = 0.25,
 ) -> float:
-    """
-    Total excess connectivity above 1 for eps >= r_robot.
-
-    score = integral of max(C(eps) - 1, 0) d_eps  for eps in [r_robot, eps_max]
-
-    0 for a fully open map.  Higher = more / narrower bottlenecks.
-    Units: world-space length (meters of clearance-scale weighted by fragmentation).
-    """
     mask = eps >= r_robot
     if mask.sum() < 2:
         return 0.0
@@ -148,13 +101,6 @@ def tightness_ratio(
     world_size: float,
     r_robot: float = 0.25,
 ) -> float:
-    """
-    Fraction of navigable space (d > r_robot) in the "marginal clearance" band
-    r_robot < d < 2*r_robot.
-
-    High tightness_ratio -> agents frequently operate near walls -> priority
-    ordering matters more (less room to manoeuvre around each other).
-    """
     navigable = d > r_robot
     marginal  = (d > r_robot) & (d < 2 * r_robot)
     n_nav = navigable.sum()
@@ -182,17 +128,6 @@ def map_summary(
     n_eps: int = 40,
     eps_max: float = 3.0,
 ) -> dict:
-    """
-    Compute all map-level metrics and return as a flat dict.
-
-    Keys returned:
-        wall_length          — total wall segment length
-        free_area_fraction   — fraction of map with d > r_robot
-        tightness_ratio      — marginal-clearance fraction of navigable area
-        bottleneck_score     — integral of excess connectivity C(eps)-1
-        peak_g_deriv_eps     — eps at which dG/deps is largest (characteristic scale)
-        n_components_at_r    — C(r_robot): components when requiring robot clearance
-    """
     d     = compute_distance_field(walls_xyxy, world_size, grid_n)
     eps   = np.linspace(0.0, eps_max, n_eps)
     G     = compute_G_eps(d, world_size, eps)
