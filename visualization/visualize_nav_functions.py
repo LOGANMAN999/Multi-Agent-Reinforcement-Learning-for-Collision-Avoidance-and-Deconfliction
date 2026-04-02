@@ -1,22 +1,3 @@
-"""
-Static visualization of harmonic potential field and A* path for a single agent.
-
-Generates two side-by-side plots for a fixed map, start position, and goal:
-  Left  — Harmonic potential field: red near obstacles/walls (phi ~= 1), blue
-           in free space (phi ~= 0), with normalized navigation-direction arrows.
-  Right — Occupancy grid used by A* with the planned (smoothed) path overlaid.
-
-Map geometry is generated via data_building/map_generation.py (no hard-coded
-maze templates). Use --category to pick the map type.
-
-Usage:
-    python visualization/visualize_nav_functions.py
-    python visualization/visualize_nav_functions.py --category walls_only
-    python visualization/visualize_nav_functions.py --category obstacles_only --n_obstacles 15
-    python visualization/visualize_nav_functions.py --start -6 -6 --goal 6 6
-    python visualization/visualize_nav_functions.py --no_smooth --save nav_vis.png
-"""
-
 import sys
 import argparse
 from pathlib import Path
@@ -97,15 +78,7 @@ def _world_to_grid_coords(wx, wy, world_size, grid_size):
 
 def compute_harmonic_field(walls, goal,
                            world_size=WORLD_SIZE, grid_size=GRID_SIZE):
-    """
-    Build obstacle mask, solve Laplace equation, compute gradient.
 
-    Returns:
-        phi:      float32 [H, W]  potential (0 at goal, 1 at obstacles)
-        grad:     float32 [H, W, 2]  world-unit gradient [gx, gy]
-        obs_mask: bool    [H, W]
-        extent:   [xmin, xmax, ymin, ymax] for imshow
-    """
     obs_mask = _build_obstacle_mask(walls, world_size, grid_size, INFLATE_RADIUS_WORLD)
     goal_col, goal_row = _world_to_grid_coords(goal[0], goal[1], world_size, grid_size)
     phi = _solve_laplace(obs_mask, goal_row, goal_col)
@@ -123,13 +96,6 @@ def compute_harmonic_field(walls, goal,
 
 def compute_astar_path(walls, start, goal,
                        world_size=WORLD_SIZE, smooth=True):
-    """
-    Build occupancy grid and run A* for a single agent.
-
-    Returns:
-        grid:       bool [H, W]  True = obstacle
-        path_world: list of [2] world-coord waypoints (may be empty)
-    """
     env  = _MockEnv(walls, start, goal, world_size=world_size)
     ctrl = AStarGlobalLocalController(astar_config=AStarConfig(grid_size=128))
     ctrl._build_grid(env)
@@ -176,14 +142,6 @@ def _draw_walls(ax, walls, color="#111111", lw=2.0, zorder=3):
 def plot_harmonic_field(ax, walls, start, goal,
                         world_size=WORLD_SIZE, grid_size=GRID_SIZE,
                         stream_density=1.8):
-    """
-    Visualize the harmonic potential field as streamlines of -grad(phi).
-
-    Each line is a path an agent would actually follow from that starting
-    point. Lines are colored by gradient magnitude: bright where the field
-    pushes strongly (near goal or tight passages), dark in flat regions.
-    A faint phi heatmap in the background gives spatial context.
-    """
     phi, grad, obs_mask, extent = compute_harmonic_field(
         walls, goal, world_size, grid_size)
 
