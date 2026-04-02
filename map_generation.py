@@ -56,14 +56,7 @@ class BoxObstacle:
 
 @dataclass
 class MapSpec:
-    """
-    A reusable map container.
 
-    category:
-        - "obstacles_only"
-        - "walls_only"
-        - "walls_and_obstacles"
-    """
     map_id: str
     category: str
     world_size: float
@@ -140,10 +133,7 @@ def _sample_dot_obstacles_as_segments(
     half_len: float = 0.2,
     margin_frac: float = 0.8,
 ) -> List[Segment]:
-    """
-    Generate 'dot-like' obstacles as tiny horizontal/vertical segments.
-    Similar to your generate_random_obstacles() sketch.
-    """
+
     segs: List[Segment] = []
     lo = -world_size * margin_frac
     hi =  world_size * margin_frac
@@ -180,10 +170,7 @@ def _sample_axis_aligned_walls(
     overlap_pad: float = 0.0,        # <-- NEW: treat "near overlap" as overlap
     max_tries: int = 20_000          # <-- NEW: avoid infinite loops
 ) -> List[Segment]:
-    """
-    Random axis-aligned internal walls (not boundary walls), with a minimum distance
-    enforced between *parallel* walls that overlap along their length.
-    """
+
     walls: List[Segment] = []
     lo = -world_size + margin
     hi =  world_size - margin
@@ -235,9 +222,6 @@ def _sample_axis_aligned_walls(
 
             walls.append(cand)
 
-    # If we couldn’t place enough walls, you can either:
-    #  - accept fewer walls (current behavior), or
-    #  - relax min_parallel_sep and retry outside this function.
     return walls
 
 
@@ -258,12 +242,7 @@ def generate_map(
     margin: float,
     min_obstacle_center_sep: Optional[float] = None,
 ) -> MapSpec:
-    """
-    Generate one map. Categories:
-      - "obstacles_only"
-      - "walls_only"
-      - "walls_and_obstacles"
-    """
+
     if category not in ("obstacles_only", "walls_only", "walls_and_obstacles"):
         raise ValueError(f"Unknown category: {category}")
 
@@ -314,10 +293,7 @@ def generate_map(
 
 
 def plot_mapspec(map_spec, ax=None, title: str = ""):
-    """
-    Visualize a MapSpec (from map_generation.py) similarly to sim_env.py.
-    Draws all segments: obstacle perimeters + explicit walls.
-    """
+
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -380,14 +356,6 @@ def map_to_env_walls(map_spec: MapSpec) -> List[Tuple[float, float, float, float
     If your env expects objects with x1,y1,x2,y2, you can wrap these later.
     """
     return [s.as_tuple() for s in map_spec.all_wall_segments()]
-
-
-# Example usage:
-#   ms = generate_mapset(seed=1, per_category=3)
-#   ms.to_json("maps_small.json")
-#   ms2 = MapSet.from_json("maps_small.json")
-#   walls = map_to_env_walls(ms2.maps[0])
-
 
 if __name__ == "__main__":
     # Generate a small batch and visualize a handful (no simulation).
