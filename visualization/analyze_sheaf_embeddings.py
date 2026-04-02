@@ -1,75 +1,3 @@
-"""
-Sheaf GNN Embedding Analysis
-============================
-
-# ──────────────────────────────────────────────────────────────
-# PHASE 0: Architecture & Data Reference
-# ──────────────────────────────────────────────────────────────
-#
-# GATDeconflictionPolicy internal layer names (gat_deconfliction_policy.py):
-#   policy.input_proj       Linear(13, 128)   node_dim+1=13 (+component_size)
-#   policy.sheaf_layer1     SheafLayer(128, 9)
-#     .restriction_mlp      Sequential: Linear(9,128)→ReLU→Linear(128, 64*128)
-#     .output_proj          Linear(64, 128)
-#     .residual_proj        Linear(128, 128)
-#     .norm                 LayerNorm(128)
-#   policy.sheaf_layer2     SheafLayer(128, 9)  (identical structure)
-#     .restriction_mlp      Sequential (same shape)
-#   policy.gru              GRUCell(128, 128)   — returns [N, 128] new hidden state
-#   policy.priority_head    Linear(128, 1)      — zero-initialized, output is priority_mean
-#   policy.value_head       Sequential: Linear(128,128)→ReLU→Linear(128,1)
-#   policy.log_std          Parameter scalar  (init -2.0)
-#
-#   forward() signature:
-#     forward(graph: Data, hidden_states: [N,128], active_mask: [N] float)
-#     returns: (priority_mean [N,1], value [N,1], new_hidden [N,128], [], sheaf_loss)
-#
-# Node features [N, 12]  (gat_graph_builder.py):
-#   [0]  velocity_x          / max_speed
-#   [1]  velocity_y          / max_speed
-#   [2]  harmonic_vel_x      / max_speed
-#   [3]  harmonic_vel_y      / max_speed
-#   [4]  speed               / max_speed
-#   [5]  dist_to_goal        / (2*world_size)
-#   [6]  heading             / π  (atan2(vy,vx))
-#   [7]  time_since_progress / 50
-#   [8]  wall_dist_front     / world_size
-#   [9]  wall_dist_left      / world_size
-#   [10] wall_dist_right     / world_size
-#   [11] wall_dist_back      / world_size
-#
-# Edge features [E, 9]  (INTERACTION_RADIUS = 2.0 world units):
-#   [0]  rel_pos_x           / INTERACTION_RADIUS (pos_j - pos_i)
-#   [1]  rel_pos_y           / INTERACTION_RADIUS
-#   [2]  rel_vel_x           / (2*max_speed)
-#   [3]  rel_vel_y           / (2*max_speed)
-#   [4]  distance            / INTERACTION_RADIUS
-#   [5]  bearing             / π
-#   [6]  heading_difference  / π
-#   [7]  TTC                 / 10.0  (time-to-collision, capped at 10 s)
-#   [8]  harmonic_vel_alignment  cosine similarity ∈ [-1, 1]
-#
-# Episode NPZ structure (verified on ep0095_s95.npz):
-#   positions           [T, N, 2]  float64
-#   goals               [T, N, 2]  float64
-#   active              [T, N]     bool
-#   astar_velocities    [T, N, 2]  float32  (harmonic base vels)
-#   corrected_velocities[T, N, 2]  float32  (priority-adjusted vels)
-#   timesteps           [T]        int32
-#   priority_scores     [T, N]     float64  (0 for harmonic episodes)
-#   yield_mask          [T, N]     bool
-#   goals_reached       [T]        int32
-#
-# Episode JSON structure:
-#   n_agents      int
-#   world_size    float
-#   walls         list of {x1, y1, x2, y2}
-#   seed          int
-#   n_agents_final int
-#   max_t         int
-# ──────────────────────────────────────────────────────────────
-"""
-
 import sys
 import os
 import json
@@ -165,17 +93,13 @@ ROBOT_RADIUS = 0.25
 # =============================================================================
 
 class _WallSeg:
-    """Minimal wall segment compatible with MultiRobotEnv._wall_endpoints()."""
     __slots__ = ("x1", "y1", "x2", "y2")
     def __init__(self, x1, y1, x2, y2):
         self.x1, self.y1, self.x2, self.y2 = x1, y1, x2, y2
 
 
 class MockEnv:
-    """
-    Lightweight env-compatible object built from episode JSON + NPZ data.
-    Satisfies all attribute and method calls made by build_graph().
-    """
+
     def __init__(self, world_size, walls_raw,
                  max_speed=MAX_SPEED, robot_radius=ROBOT_RADIUS):
         self.world_size  = float(world_size)
@@ -227,18 +151,7 @@ def load_policy(checkpoint_path: str, device="cpu") -> GATDeconflictionPolicy:
 
 
 def load_episode(json_path: str, npz_path: str = None) -> dict:
-    """
-    Load a recorded episode.  Returns a dict with fields:
-        positions      [T, N, 2]
-        velocities     [T, N, 2]  (corrected / priority-adjusted)
-        harmonic_vels  [T, N, 2]  (astar_velocities in NPZ)
-        goals          [N, 2]
-        active         [T, N]
-        n_agents       int
-        n_timesteps    int
-        world_size     float
-        walls_raw      list of dicts {x1,y1,x2,y2}
-    """
+
     with open(json_path) as f:
         meta = json.load(f)
 
@@ -281,12 +194,7 @@ def load_episode(json_path: str, npz_path: str = None) -> dict:
 # =============================================================================
 
 class ActivationCollector:
-    """
-    Registers forward hooks on sheaf_layer1, sheaf_layer2, gru, and priority_head.
-    Captures per-step activations across an episode replay.
 
-    After all forward passes, call finalize() to stack arrays.
-    """
 
     def __init__(self, policy: GATDeconflictionPolicy):
         self.policy = policy
@@ -426,10 +334,7 @@ class ActivationCollector:
 
 def replay_episode(policy, episode_data: dict, collector: ActivationCollector,
                    device="cpu") -> dict:
-    """
-    Replay the episode through the policy with hooks active.
-    Returns flat metadata arrays for coloring scatter plots.
-    """
+
     positions     = episode_data["positions"]      # [T, N, 2]
     velocities    = episode_data["velocities"]     # [T, N, 2]
     harmonic_vels = episode_data["harmonic_vels"]  # [T, N, 2]
