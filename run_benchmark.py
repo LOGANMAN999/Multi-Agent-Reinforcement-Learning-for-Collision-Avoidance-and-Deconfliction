@@ -1,31 +1,3 @@
-#!/usr/bin/env python3
-"""
-Benchmark runner: Sheaf deconfliction model vs random-priority baseline.
-
-Both arms use the same harmonic base navigation and priority-modulated
-repulsion infrastructure.  The only difference is how priority scores are
-produced:
-  - sheaf: GATDeconflictionPolicy (Sheaf+GRU) trained checkpoint
-  - random: N(0,1) random scores drawn fresh each step (no learned signal)
-
-For each seed in [0, N_EPISODES), builds an identical environment, runs both
-arms, saves NPZ recordings for both, and writes per-episode outcomes to a CSV.
-
-Output layout:
-    runs/benchmark_<TIMESTAMP>/
-        sheaf/
-            ep0000_s0.npz / .json
-            ...
-        random/
-            ep0000_s0.npz / .json
-            ...
-        results.csv       <- per-episode summary table
-        summary.txt       <- aggregate stats printed at the end
-
-Usage:
-    python run_benchmark.py
-"""
-
 import sys
 import csv
 import time
@@ -90,14 +62,6 @@ CSV_COLUMNS = [
 # ---------------------------------------------------------------------------
 
 class RandomPriorityController:
-    """
-    Drop-in replacement for GATDeconflictionController that uses N(0,1) random
-    priority scores instead of a trained policy.
-
-    Everything else is identical: same harmonic base, same graph construction,
-    same connected-component ranking, same priority-modulated repulsion field.
-    This isolates the contribution of the learned ranking signal.
-    """
 
     def __init__(self, device: torch.device, interaction_radius: float = 0.5):
         self.device              = device
@@ -226,12 +190,7 @@ class RandomPriorityController:
 # ---------------------------------------------------------------------------
 
 def read_episode_outcome(npz_path: Path) -> dict:
-    """
-    Extract final-frame outcome stats from a saved NPZ recording.
 
-    Returns dict with keys: goals_reached, n_collided, n_agents, steps,
-    goal_rate, collision_rate.
-    """
     data = np.load(str(npz_path))
     n_agents     = int(data["active"].shape[1])
     goals        = int(data["goals_reached"][-1])
@@ -249,7 +208,6 @@ def read_episode_outcome(npz_path: Path) -> dict:
 
 
 def print_summary(results: list, output_path: Path) -> None:
-    """Print and save aggregate statistics."""
     def mean(key):
         return float(np.mean([r[key] for r in results]))
 
