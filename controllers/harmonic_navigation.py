@@ -1,30 +1,3 @@
-"""
-Harmonic Potential Field Controller
-====================================
-Solves Laplace's equation (∇²φ = 0) on a 128×128 grid for the current map.
-Goal cells are set to 0 (sink), boundary/obstacle cells to 1 (source).
-The resulting potential has no local minima — agents follow the negative gradient
-from their current position toward the goal.
-
-Interface matches AStarGlobalLocalController:
-    controller = HarmonicNavigationController()
-    controller.reset(env)            # call once per episode (builds all fields)
-    velocities = controller(env)     # call each step → (N, 2) float velocities
-
-Grid parameters (validated for this env):
-    world_size = 10.0  → world spans [-10, 10]² = 20 × 20 m
-    grid_size  = 128   → cell_size ≈ 0.156 m
-    inflate    = 0.25 m (= robot_radius) → ~1.6 cells; matches the physical agent
-                 size so the Laplace field deflects agents before collision range
-
-Solver priority:
-    1. scipy.sparse.linalg.spsolve  (direct, ~50–150 ms for 128²)
-    2. Numpy vectorized Gauss-Seidel SOR  (fallback, 1 500 iters, ω = 1.8)
-
-File: src/controllers/harmonic_navigation.py
-Dependencies: numpy, (optional) scipy
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -53,22 +26,7 @@ SOR_TOL: float = 1e-4         # SOR convergence tolerance (max-norm residual)
 
 def _build_obstacle_mask(walls, world_size: float, grid_size: int,
                          inflate_radius: float) -> np.ndarray:
-    """
-    Returns a boolean [H, W] array where True = obstacle cell.
 
-    Outer border row/column is always obstacle (world boundary).
-    Any cell whose centre is within `inflate_radius` world-units of any wall
-    segment is marked as obstacle (configuration-space inflation).
-
-    Args:
-        walls:          list of Wall(x1, y1, x2, y2) objects
-        world_size:     half-extent of square world  (world spans [-ws, ws]²)
-        grid_size:      number of cells per axis (H = W = grid_size)
-        inflate_radius: minimum clearance in world units
-
-    Returns:
-        mask: bool [grid_size, grid_size]  (row = y, col = x)
-    """
     H = W = grid_size
     cell_size = (2.0 * world_size) / grid_size  # world units per cell
 
@@ -121,20 +79,7 @@ def _build_obstacle_mask(walls, world_size: float, grid_size: int,
 
 def _solve_laplace(obstacle_mask: np.ndarray,
                    goal_row: int, goal_col: int) -> np.ndarray:
-    """
-    Solves ∇²φ = 0 with:
-        φ = 0  at goal cell  (sink)
-        φ = 1  at all obstacle/boundary cells  (source)
 
-    Tries scipy sparse direct solver first; falls back to SOR.
-
-    Args:
-        obstacle_mask: bool [H, W]
-        goal_row, goal_col: grid indices of the goal
-
-    Returns:
-        phi: float32 [H, W]  potential field, 0 at goal, 1 at walls
-    """
     H, W = obstacle_mask.shape
 
     # Clamp goal into a free cell (nearest free if goal is inside obstacle)
@@ -216,10 +161,7 @@ def _solve_laplace(obstacle_mask: np.ndarray,
 def _solve_sor(obstacle_mask: np.ndarray,
                goal_mask: np.ndarray,
                phi: np.ndarray) -> np.ndarray:
-    """
-    Successive Over-Relaxation (SOR) solver for Laplace on the free cells.
-    Vectorised checkerboard update — no Python loops over cells.
-    """
+
     H, W = phi.shape
     fixed = obstacle_mask | goal_mask
 
@@ -262,13 +204,7 @@ def _solve_sor(obstacle_mask: np.ndarray,
 
 def _compute_gradient(phi: np.ndarray,
                       obstacle_mask: np.ndarray) -> np.ndarray:
-    """
-    Central finite-difference gradient of φ.
 
-    Returns:
-        grad: float32 [H, W, 2]  where grad[r, c] = [dφ/dx, dφ/dy]
-              zeroed at obstacle cells.
-    """
     H, W = phi.shape
     cell_size = 1.0  # normalised; caller will scale by actual cell_size
 
@@ -300,18 +236,7 @@ def _bilinear_sample(field: np.ndarray,
                      world_pos: np.ndarray,
                      world_size: float,
                      grid_size: int) -> np.ndarray:
-    """
-    Bilinearly interpolates `field` ([H, W, D]) at world positions.
 
-    Args:
-        field:      [H, W, D]
-        world_pos:  [N, 2] in world coords  ([-world_size, world_size]²)
-        world_size: half-extent of world
-        grid_size:  cells per axis
-
-    Returns:
-        values: [N, D] interpolated field values
-    """
     H, W = field.shape[:2]
     D = field.shape[2]
     cell_size = (2.0 * world_size) / grid_size
@@ -348,27 +273,7 @@ def _bilinear_sample(field: np.ndarray,
 # ---------------------------------------------------------------------------
 
 class HarmonicNavigationController:
-    """
-    Harmonic potential field navigation controller.
 
-    Computes one Laplace field per agent goal at the start of each episode
-    (call `reset(env)`), then provides velocity commands each step via
-    `__call__(env)`.
-
-    Usage:
-        controller = HarmonicNavigationController()
-        controller.reset(env)            # once per episode
-        velocities = controller(env)     # each step → (N, 2) np.float32
-
-    Attributes:
-        grid_size:          cells per axis (default 256)
-        max_speed:          velocity magnitude cap (matched to env at reset)
-        repulsion_radius:   agents within this world-unit distance repel each other
-        repulsion_strength: peak repulsive force magnitude (world units/s)
-        repulsion_sigma:    Gaussian falloff distance (world units)
-        _obstacle_mask:     bool [H, W] — rebuilt each reset
-        _gradients:         list of [H, W, 2] gradient fields, one per agent
-    """
 
     def __init__(self,
                  grid_size: int = GRID_SIZE,
@@ -431,22 +336,7 @@ class HarmonicNavigationController:
     # ------------------------------------------------------------------
 
     def __call__(self, env: "MultiRobotEnv", repulsion_radii=None, repulsion_strengths=None) -> np.ndarray:
-        """
-        Returns velocity commands for all agents.
 
-        Each agent's velocity is the sum of:
-          1. Harmonic field velocity  — steers toward goal, no local minima
-          2. Agent repulsion          — Gaussian pushback from nearby agents
-
-        Agents that have no field (e.g., reset() not yet called) fall back
-        to direct-to-goal heading at max_speed.
-
-        Args:
-            env: MultiRobotEnv instance
-
-        Returns:
-            velocities: float32 [N, 2]
-        """
         n_agents = env.n_agents
         positions = env.positions  # [N, 2]
         goals = env.goals          # [N, 2]
@@ -598,42 +488,7 @@ class HarmonicNavigationController:
         goal_proximity_stop: float = 1.0,
         safety_margin: float = 0.0,
     ) -> np.ndarray:
-        """
-        Simulate each agent's harmonic-field trajectory for ``lookahead_steps``
-        discrete steps and detect wall collisions.
 
-        The simulated trajectory is identical to the real trajectory an agent
-        would follow under the harmonic controller alone: same bilinear gradient
-        lookup, same max_speed normalisation, same dt.  Agent-agent repulsion is
-        NOT modelled — this is a pure wall-geometry check.
-
-        Each dt step is divided into ``_FLOW_SUBSTEPS`` sub-steps so that thin
-        (1-cell) walls are caught even when an agent would otherwise step clean
-        over them at the coarse dt resolution.
-
-        ``safety_margin`` widens the obstacle mask used for the scan (without
-        changing the Laplace field) to catch agents whose trajectory passes
-        through a rasterization gap in a diagonal wall (~1 grid cell ≈ 0.156 m).
-
-        Args:
-            positions:           [N, 2] current world positions.
-            dt:                  Simulation timestep; should match env.dt.
-            lookahead_steps:     Number of forward steps to simulate (default 20).
-            goals:               [N, 2] goal positions.  When the simulated
-                                 trajectory comes within ``goal_proximity_stop``
-                                 of the goal, the lookahead stops early to avoid
-                                 false positives when the goal is near a wall.
-            goal_proximity_stop: Distance threshold (world units) for early
-                                 termination.  Default 1.0 m.
-            safety_margin:       Extra clearance (world units) added to the
-                                 obstacle inflation radius for this scan only,
-                                 to catch diagonal-wall rasterization gaps.
-                                 Does NOT change the Laplace field.  Default 0.0.
-
-        Returns:
-            hits: [N] bool — True if agent i's simulated trajectory enters an
-                  inflated obstacle cell within ``lookahead_steps`` steps.
-        """
         N = len(positions)
         hits = np.zeros(N, dtype=bool)
 
@@ -732,17 +587,7 @@ class HarmonicNavigationController:
     # ------------------------------------------------------------------
 
     def compute_potential_for_goal(self, goal: np.ndarray) -> np.ndarray:
-        """
-        Solves and returns the Laplace potential [H, W] for a single goal
-        without caching.  Provided for compatibility with any code that
-        calls `self.navigator.compute_potential_for_goal(goal)`.
 
-        Args:
-            goal: [2] world coordinates
-
-        Returns:
-            phi: float32 [H, W]
-        """
         if self._obstacle_mask is None:
             raise RuntimeError("Call reset(env) before compute_potential_for_goal.")
         gx, gy = self._world_to_grid(goal[0], goal[1])
