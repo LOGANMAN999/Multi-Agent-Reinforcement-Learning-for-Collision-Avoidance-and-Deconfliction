@@ -1,35 +1,3 @@
-"""
-PPO trainer for sheaf-regularized harmonic-navigation deconfliction.
-
-Pipeline per step:
-  1. HarmonicNavigationController(env) -> harmonic_vels [N, 2]
-  2. build_graph(active_mask=~collided & ~at_goal) -> graph
-  3. Attach component_sizes to graph (from union-find)
-  4. policy.forward(graph, hidden) -> priority_mean, values, new_hidden, sheaf_loss
-  5. Sample priority_score ~ N(priority_mean, std)
-  6. HarmonicPriorityManager.step(at_goal=at_goal) -> final_vels [N, 2] via 1/(rank+1)
-  7. env.step(final_vels) -> next state
-  8. compute_rewards_harmonic() -> rewards [N]
-  9. buffer.add_step(...)
-
-Episode termination:
-  - All agents have either reached their goal (once) OR collided.
-  - ep_steps >= max_episode_steps (timeout).
-
-Active vs Inactive:
-  - Active:   agents that have NOT collided (includes goal-reached agents).
-  - Inactive: agents that have collided — frozen in place, still physical obstacles.
-  - at_goal:  agents that have reached their goal at least once — excluded from
-              graph edges and priority protocol; keep full harmonic velocity.
-
-Training (full-sequence GRU replay):
-  - Only complete episodes enter the buffer.
-  - At update time the GRU is re-run from h=0 through each complete episode.
-  - sheaf_loss is accumulated during the replay and added to the PPO loss.
-
-File: src/RL_stack/gat_ppo_trainer.py
-"""
-
 import os
 import csv
 import time
@@ -123,7 +91,7 @@ def _manual_reset_env(
     config: Dict,
     episode_seed: int = 0,
 ) -> np.ndarray:
-    """Reset env manually using map_generation. Returns initial obs."""
+   
     seed = int(config.get("map_base_seed", 42)) + episode_seed
     rng  = np.random.default_rng(seed)
 
@@ -183,12 +151,6 @@ def _attach_component_sizes(
 
 
 class GATDeconflictionTrainer:
-    """
-    PPO trainer for Sheaf+GRU harmonic-navigation deconfliction.
-
-    Full-sequence GRU replay: the GRU is re-run from h=0 at training time.
-    Only complete episodes enter training — no partial trajectories.
-    """
 
     def __init__(self, policy: GATDeconflictionPolicy, config: Dict):
         self.policy  = policy
@@ -290,10 +252,7 @@ class GATDeconflictionTrainer:
                   f"n_agents={self.n_agents} (collision_rate={mean_cr:.3f})")
 
     def _reset_episode(self) -> int:
-        """Reset env, prune wall-colliding agents, reset controllers.
 
-        Returns the actual agent count after pruning.
-        """
         _manual_reset_env(self.env, self.n_agents, self.config, episode_seed=self.episode_count)
 
         # Harmonic flow scan — remove agents whose solo path would hit a wall.
