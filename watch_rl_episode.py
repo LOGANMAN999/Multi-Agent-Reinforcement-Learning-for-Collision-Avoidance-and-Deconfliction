@@ -1,47 +1,4 @@
 #!/usr/bin/env python3
-"""
-Watch GAT Deconfliction Policy in Action.
-
-Loads a trained GATDeconflictionPolicy checkpoint and visualizes it
-navigating a procedurally-generated environment with multiple agents.
-
-Supports three modes:
-1. Live rendering (default): Simulate and render in real-time
-2. Recording: Simulate and save trajectory to disk (no rendering)
-3. Playback: Load and replay a saved trajectory from disk (fast)
-
-Episode recordings are saved to: runs/episode_recordings/
-
-Naming convention:
-  GAT:       gat_deconfliction/policy_ep{epoch}_n{agents}_s{seed}
-  Harmonic:  harmonic_baseline/harmonic_n{agents}_s{seed}
-
-Usage:
-    # Live visualization (default — no recording)
-    python watch_rl_episode.py [--checkpoint PATH] [--n_agents N] [--seed S]
-
-    # Harmonic navigation baseline (no RL model)
-    python watch_rl_episode.py --harmonic_only
-
-    # Pure A* controller baseline (no RL model)
-    python watch_rl_episode.py --astar_only
-
-    # Record an episode (auto-saves to runs/episode_recordings/)
-    python watch_rl_episode.py --record "gat_deconfliction/policy_ep350_n20_s4241"
-    python watch_rl_episode.py --harmonic_only --record "harmonic_baseline/harmonic_n20_s4241"
-
-    # Playback a recorded episode (loads from runs/episode_recordings/)
-    python watch_rl_episode.py --playback "gat_deconfliction/policy_ep350_n20_s4241"
-    python watch_rl_episode.py --playback "harmonic_baseline/harmonic_n20_s4241" --pause 0.02
-
-# Phase 0 Header
-# File: src/watch_rl_episode.py
-# Dependencies: sim_env, controllers.gat_deconfliction_controller,
-#   gat_deconfliction_policy, data_building.map_generation
-# Responsibility: Interactive visualization of trained GAT policy.
-# Does NOT: perform training or modify the policy.
-"""
-
 import argparse
 import numpy as np
 import torch
@@ -78,11 +35,7 @@ def _compute_proximity_edges(
     radius: float,
     env=None,                # MultiRobotEnv — if provided, filters wall-blocked edges
 ) -> np.ndarray:
-    """Return [2, E] directed edge index for all active agent pairs within radius.
-
-    If env is supplied, edges whose line-of-sight crosses a wall are removed,
-    matching the visibility-graph logic used by build_graph() during training.
-    """
+    
     active_idx = np.where(active_mask)[0]
     if len(active_idx) < 2:
         return np.zeros((2, 0), dtype=np.int64)
@@ -113,7 +66,6 @@ _AGENT_COLORS = plt.cm.tab10.colors
 
 @dataclass
 class EpisodeFrame:
-    """Single frame in a recorded episode."""
     positions: np.ndarray           # [N, 2]
     goals: np.ndarray               # [N, 2]
     active: np.ndarray              # [N] bool
@@ -127,7 +79,6 @@ class EpisodeFrame:
 
 @dataclass
 class EpisodeRecording:
-    """Complete recorded episode with metadata."""
     frames: List[EpisodeFrame]
     n_agents: int
     world_size: float
@@ -138,13 +89,7 @@ class EpisodeRecording:
 
 
 def save_episode(recording: EpisodeRecording, filepath: str) -> None:
-    """
-    Save a recorded episode to disk.
-
-    Args:
-        recording: EpisodeRecording object.
-        filepath: Path to save (will create .npz and .json files).
-    """
+   
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
@@ -291,18 +236,6 @@ def build_test_env(
     n_agents: int = 20,
     world_size: float = 10.0,
 ) -> MultiRobotEnv:
-    """
-    Build a procedurally-generated test environment.
-
-    Args:
-        seed: RNG seed for reproducibility.
-        chosen_idx: Which map from the generated set to use.
-        n_agents: Number of agents.
-        world_size: Half-size of the square world.
-
-    Returns:
-        env: Initialized MultiRobotEnv.
-    """
     ms = generate_mapset(
         seed=seed,
         per_category=3,
@@ -386,26 +319,7 @@ def render_frame(
     astar_mode: Optional[np.ndarray] = None,
     goals_reached: int = 0,
 ):
-    """
-    Render one frame showing robot positions, goals, velocities, and optionally
-    the interaction graph.
 
-    Args:
-        env_or_template: MultiRobotEnv or simple env-like object with walls.
-        active: [N] bool array.
-        astar_velocities: [N, 2] harmonic base velocities (dashed in dual mode).
-        corrected_velocities: [N, 2] priority-adjusted velocities (solid).
-        positions: [N, 2] current agent positions.
-        goals: [N, 2] goal positions.
-        t: Current timestep.
-        pause: Matplotlib pause duration.
-        dual_mode: If True, show dashed (harmonic) and solid (adjusted) arrows.
-        yield_mask: [N] bool — agents currently yielding (shown with ring).
-        priority_scores: [N] float — raw priority scores (unused in rendering).
-        edge_index: [2, E] int array of directed graph edges, or None.
-        show_graph: If True, draw interaction radius discs and edge lines.
-        astar_mode: [N] bool — agents currently using A* fallback controller.
-    """
     plt.clf()
     ax = plt.gca()
     N = len(active)
@@ -518,17 +432,6 @@ def run_episode(
     record_path: str = None,
     show_graph: bool = True,
 ):
-    """
-    Run one episode with the GAT priority-assignment policy.
-
-    Args:
-        env: MultiRobotEnv instance.
-        controller: GATDeconflictionController wrapper.
-        max_steps: Maximum number of steps.
-        pause: Time between frames (seconds).
-        record_path: Optional path to save recording. If provided, records but doesn't render.
-        show_graph: If True, draw interaction graph edges and radius discs.
-    """
     N = env.n_agents
     controller.reset(env, n_agents=N)
 
@@ -626,17 +529,7 @@ def run_episode_harmonic(
     record_path: str = None,
     show_graph: bool = True,
 ):
-    """
-    Run one episode with the harmonic navigation controller baseline.
 
-    Args:
-        env: MultiRobotEnv instance.
-        controller: HarmonicNavigationController.
-        max_steps: Maximum number of steps.
-        pause: Time between frames (seconds).
-        record_path: Optional path to save recording. If None, renders live.
-        show_graph: If True, draw interaction graph edges and radius discs.
-    """
     N = env.n_agents
     collided_mask     = np.zeros(N, dtype=bool)
     goal_reached_ever = np.zeros(N, dtype=bool)
@@ -730,20 +623,7 @@ def run_episode_astar(
     record_path: str = None,
     show_graph: bool = True,
 ):
-    """
-    Run one episode with the A* controller baseline (no RL model).
 
-    AStarGlobalLocalController auto-initializes on the first call when env.t == 0;
-    no explicit reset() is required.
-
-    Args:
-        env: MultiRobotEnv instance.
-        controller: AStarGlobalLocalController.
-        max_steps: Maximum number of steps.
-        pause: Time between frames (seconds).
-        record_path: Optional path to save recording. If None, renders live.
-        show_graph: If True, draw interaction graph edges and radius discs.
-    """
     N = env.n_agents
     collided_mask     = np.zeros(N, dtype=bool)
     goal_reached_ever = np.zeros(N, dtype=bool)
@@ -831,15 +711,7 @@ def playback_episode(
     pause: float = 0.04,
     dual_mode: bool = True,
 ):
-    """
-    Playback a recorded episode without any simulation.
 
-    Args:
-        recording: EpisodeRecording object.
-        env_template: Simple env-like object with walls for rendering.
-        pause: Time between frames (seconds).
-        dual_mode: If True, show dashed (A*) and solid (adjusted) arrows.
-    """
     plt.ion()
     plt.figure(figsize=(8, 8))
 
@@ -870,22 +742,7 @@ def export_gif(
     fps: int = 20,
     dual_mode: bool = True,
 ):
-    """
-    Export a recorded episode as an animated GIF.
 
-    Requires Pillow (pip install Pillow).  No ffmpeg needed.
-
-    Renders each frame individually with fig.savefig → BytesIO → PIL Image,
-    then assembles the GIF with Pillow.  Avoids FuncAnimation, which conflicts
-    with render_frame's internal plt.clf() calls.
-
-    Args:
-        recording:    EpisodeRecording object.
-        env_template: Env-like object with walls for rendering.
-        output_path:  Destination .gif path.
-        fps:          Frames per second in the output GIF.
-        dual_mode:    If True, show dashed (harmonic) and solid (adjusted) arrows.
-    """
     import io
     import matplotlib
     from PIL import Image
