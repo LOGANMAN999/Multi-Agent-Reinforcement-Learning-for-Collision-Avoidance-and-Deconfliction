@@ -1,22 +1,3 @@
-"""
-tda/agent_metrics.py
-
-Agent-configuration metrics derived from initial positions and goal locations.
-
-These capture the traffic-flow structure of each episode independently of the
-map geometry.  High-conflict configurations require good priority ordering
-regardless of map bottlenecks.
-
-Public API
-----------
-cross_traffic_fraction(starts, goals, interaction_radius) -> float
-wasserstein_dist(starts, goals)                           -> float
-path_crossing_density(starts, goals, interaction_radius)  -> float
-initial_pair_density(starts, interaction_radius)          -> float
-mean_path_length(starts, goals)                           -> float
-agent_summary(starts, goals, interaction_radius)          -> dict
-"""
-
 from __future__ import annotations
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -32,15 +13,7 @@ def cross_traffic_fraction(
     goals: np.ndarray,
     interaction_radius: float = 2.0,
 ) -> float:
-    """
-    Fraction of nearby agent pairs whose goal-direction vectors are opposed
-    (cosine < 0, i.e. heading toward each other).
 
-    'Nearby' = within interaction_radius of each other at t=0.
-
-    High values -> many head-on encounters -> priority ordering critical.
-    Returns 0.0 if no nearby pairs exist.
-    """
     N = len(starts)
     dirs = goals - starts                                         # [N, 2]
     norms = np.linalg.norm(dirs, axis=1, keepdims=True) + 1e-8
@@ -88,13 +61,7 @@ def _min_dist_straight_paths(
     s_i: np.ndarray, g_i: np.ndarray,
     s_j: np.ndarray, g_j: np.ndarray,
 ) -> float:
-    """
-    Minimum distance between two agents travelling at the same fractional
-    speed along their straight-line start->goal paths.
 
-    Parameterisation: p(t) = s + t*(g - s), t in [0,1].
-    Minimises |p_i(t) - p_j(t)|^2 over t.
-    """
     a = s_i - s_j                           # relative position at t=0
     b = (g_i - s_i) - (g_j - s_j)          # relative velocity direction
     b_sq = float(b @ b)
@@ -110,15 +77,7 @@ def path_crossing_density(
     goals: np.ndarray,
     interaction_radius: float = 2.0,
 ) -> float:
-    """
-    Fraction of agent pairs whose straight-line paths come within
-    interaction_radius/2 of each other at the same journey-fraction t.
 
-    This is a proxy for "intended collision density" before the harmonic
-    field routes agents around each other.
-
-    High values -> more conflict events predicted -> sheaf priority matters more.
-    """
     N = len(starts)
     if N < 2:
         return 0.0
@@ -142,12 +101,7 @@ def initial_pair_density(
     starts: np.ndarray,
     interaction_radius: float = 2.0,
 ) -> float:
-    """
-    Fraction of agent pairs within interaction_radius at t=0.
 
-    Equivalent to the edge density of the communication graph at episode start.
-    High density -> priority protocol active immediately for most agents.
-    """
     N = len(starts)
     if N < 2:
         return 0.0
@@ -175,17 +129,7 @@ def agent_summary(
     goals: np.ndarray,
     interaction_radius: float = 2.0,
 ) -> dict:
-    """
-    Compute all agent-configuration metrics and return as a flat dict.
 
-    Keys returned:
-        cross_traffic_fraction  — fraction of nearby pairs heading toward each other
-        wasserstein_dist        — mean optimal transport cost start->goal
-        path_crossing_density   — fraction of pairs with crossing straight-line paths
-        initial_pair_density    — graph edge density at t=0
-        mean_path_length        — average start-to-goal Euclidean distance
-        n_agents                — number of agents
-    """
     return {
         "cross_traffic_fraction": cross_traffic_fraction(starts, goals, interaction_radius),
         "wasserstein_dist":       wasserstein_dist(starts, goals),
