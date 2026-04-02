@@ -1,22 +1,3 @@
-"""
-# Phase 1 Vectorization Header
-# File: src/sim_env.py
-# Changes:
-#   - Added _wall_endpoints() to extract [W,2] arrays once per episode reset.
-#   - Added _pts_to_segments_dist_batched(): vectorized [N,W] point-to-segment
-#     distances using NumPy broadcasting — zero Python loops over agents or walls.
-#   - Added _pairwise_dist_matrix(): cdist-based [N,N] pairwise distance matrix.
-#   - Replaced _check_wall_collisions inner loop with vectorized call.
-#   - Replaced _check_robot_collisions nested loop with vectorized call.
-#   - Added check_per_agent_collisions_vec(positions) → ([N] bool, [N] bool)
-#     for use by the trainer (returns per-agent flags, not single bool).
-#   - Replaced lidar_scan_all() inner loop with vectorized ray-segment
-#     intersection over [N,K,W] simultaneously.
-#   - Added _batched_ray_wall_distances_per_agent() static helper used by
-#     build_graph for directional wall distances.
-#   - Added __main__ throughput benchmark (1.6 above original).
-# Why: eliminate all O(N) and O(N²) Python loops from the simulation hot path.
-"""
 from __future__ import annotations
 import enum
 from dataclasses import dataclass
@@ -62,10 +43,6 @@ WORLD_SIZE = 10.0  # square world: [-WORLD_SIZE, WORLD_SIZE]^2
 
 
 def generate_random_obstacles(num_obstacles: int = 8) -> List[Wall]:
-    """
-    Generate 'dot-like' obstacles by making tiny vertical or horizontal walls.
-    This roughly matches Fig. 5(a) in the paper.
-    """
     walls: List[Wall] = []
     for _ in range(num_obstacles):
         x = np.random.uniform(-WORLD_SIZE * 0.8, WORLD_SIZE * 0.8)
@@ -83,10 +60,6 @@ def generate_random_obstacles(num_obstacles: int = 8) -> List[Wall]:
 
 
 def generate_maze_walls() -> List[Wall]:
-    """
-    Simple hand-crafted 'maze' as a few long axis-aligned segments.
-    Meant to resemble Fig. 5(b) qualitatively.
-    """
     w = WORLD_SIZE
     walls = [
         # outer boundary
@@ -103,9 +76,6 @@ def generate_maze_walls() -> List[Wall]:
 
 
 def generate_map(map_type: MapType) -> List[Wall]:
-    """
-    Master function to generate obstacle walls for a given map type.
-    """
     if map_type == MapType.RANDOM:
         return generate_random_obstacles()
 
@@ -154,13 +124,6 @@ def debug_draw_lidar(env, agent_i=0, n_rays=32, max_range=20.0):
 # --- Multi-robot environment --------------------------------------------------
 
 class MultiRobotEnv:
-    """
-    Simple 2D multi-robot environment on top of our wall maps.
-
-    - Robots are discs with radius self.robot_radius.
-    - Actions are desired velocities in R^2 per robot.
-    - Dynamics: p_{t+1} = p_t + dt * clip(v, max_speed).
-    """
 
     def __init__(
         self,
@@ -171,17 +134,6 @@ class MultiRobotEnv:
         goal_tolerance: float = 0.3,
         action_mode: str = "velocity",
     ):
-        """
-        action_mode : "velocity" (default) or "waypoint".
-          - "velocity": step() expects (N,2) velocity commands (original behaviour).
-          - "waypoint": step() internally converts waypoint offsets → velocities via PD.
-            The conversion is:  v = k_p * (waypoint - pos),  k_p = max_speed / r_max.
-            r_max defaults to 2.0 (WaypointConfig default); override via step(..., r_max=).
-            The velocity output is then clipped to max_speed and passed through the
-            normal dynamics — no external safety filter call is made here.
-            Callers are responsible for running safety_filter_with_count() before
-            calling step() if they want safe velocities with intervention counts.
-        """
         assert action_mode in ("velocity", "waypoint"), \
             f"action_mode must be 'velocity' or 'waypoint', got {action_mode!r}"
         self.world_size = world_size
@@ -202,11 +154,6 @@ class MultiRobotEnv:
     # ------------- public API -------------------------------------------------
 
     def reset(self, map_type: MapType, n_agents: int):
-        """
-        Sample a new map and random start/goal positions.
-
-        Returns an observation array, here [x, y, gx, gy] per agent.
-        """
         self.map_type = map_type
         self.walls = generate_map(map_type)
         self.n_agents = n_agents
@@ -231,42 +178,11 @@ class MultiRobotEnv:
         waypoints: np.ndarray,
         r_max: float = 2.0,
     ) -> np.ndarray:
-        """
-        Proportional controller: convert (N,2) absolute waypoint positions → (N,2) velocities.
-
-        Formula:  v = k_p * (waypoint - pos),  k_p = max_speed / r_max
-        The proportional gain k_p ensures that a waypoint exactly r_max away
-        from the agent produces a velocity of max_speed — no overshoot.
-        Output is NOT clipped here; step() handles max_speed clipping.
-
-        Args:
-            waypoints: (N,2) absolute waypoint positions in world coordinates.
-            r_max:     waypoint radius bound used when the RL policy was trained (default 2.0).
-
-        Returns:
-            velocities: (N,2) proportional velocity commands.
-        """
         assert self.positions is not None
         k_p = self.max_speed / r_max
         return k_p * (waypoints - self.positions)
 
     def step(self, actions: np.ndarray, r_max: float = 2.0):
-        """
-        Step the environment forward one time-step.
-
-        actions: np.ndarray of shape (N, 2).
-          - action_mode="velocity": raw velocity commands (m/s).
-          - action_mode="waypoint": absolute waypoint positions; converted to
-            velocities internally via _pd_waypoint_to_vel(actions, r_max).
-
-        r_max: waypoint bound [m] — only used when action_mode="waypoint".
-
-        Returns:
-            obs: (N, 4) array
-            reward: float (negative mean distance to goal)
-            done: bool (episode finished)
-            info: dict (extra diagnostics)
-        """
         assert self.positions is not None and self.goals is not None
         assert actions.shape == (self.n_agents, 2)
 
@@ -313,9 +229,6 @@ class MultiRobotEnv:
 
 
     def render(self):
-        """
-        Simple matplotlib render of walls, robot positions, and goals.
-        """
         assert self.positions is not None and self.goals is not None
 
         plt.clf()
@@ -363,24 +276,7 @@ class MultiRobotEnv:
         a_pts: np.ndarray,     # [W, 2] segment start points
         b_pts: np.ndarray,     # [W, 2] segment end points
     ) -> np.ndarray:
-        """
-        Vectorized point-to-segment distance for N points and W segments.
-
-        Derivation:
-          For segment ab, the closest point to p is proj = a + t*(b-a),
-          where t = dot(p-a, b-a) / dot(b-a, b-a), clamped to [0,1].
-          Distance = ||p - proj||.
-
-        Broadcasting plan:
-          ab[w]       = b[w] - a[w]          shape [W, 2]
-          ap[n, w]    = points[n] - a[w]      shape [N, W, 2]
-          t[n, w]     = dot(ap, ab) / dot(ab,ab)  shape [N, W]
-          proj[n, w]  = a[w] + t[n,w]*ab[w]  shape [N, W, 2]
-          dist[n, w]  = ||points[n] - proj[n,w]|| shape [N, W]
-
-        Returns:
-            dist: [N, W] float array of distances.
-        """
+  
         if a_pts.shape[0] == 0:
             return np.zeros((points.shape[0], 0), dtype=float)
 
@@ -411,17 +307,7 @@ class MultiRobotEnv:
     def check_per_agent_collisions_vec(
         self, positions: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Vectorized per-agent collision detection.  Zero Python loops.
 
-        All agents (active and inactive/frozen) are treated as physical obstacles.
-        The caller is responsible for filtering results by active_mask to prevent
-        re-counting already-inactive agents.
-
-        Returns:
-            wall_cols:  [N] bool — True if agent i collides with any wall.
-            robot_cols: [N] bool — True if agent i is within collision distance of any other agent.
-        """
         N = positions.shape[0]
         a_pts, b_pts = self._wall_endpoints()
 
@@ -447,28 +333,7 @@ class MultiRobotEnv:
         b_pts: np.ndarray,               # [W, 2] wall end points
         max_range: float,
     ) -> np.ndarray:
-        """
-        Vectorized ray–wall intersection distances for N agents × D directions × W walls.
 
-        Uses the 2-D ray–segment intersection formula via cross products:
-          Given ray: p + t·r_hat (t >= 0)
-          Segment:   a + u·(b - a)  (u in [0,1])
-          rxs  = cross2(r_hat, s)  where s = b - a
-          t    = cross2(q_p, s) / rxs  where q_p = a - p
-          u    = cross2(q_p, r_hat) / rxs
-          Valid: |rxs| > eps  AND  t >= 0  AND  0 <= u <= 1
-
-        Broadcasting plan (dims: N=agents, D=directions, W=walls):
-          s[w]          = b[w] - a[w]             [W, 2]
-          q_p[n, w]     = a[w] - pos[n]            [N, W, 2]
-          rxs[n, d, w]  = cross2(dir[n,d], s[w])  [N, D, W]
-          cross_qp_s[n, w] = cross2(q_p[n,w], s[w])  [N, W]  (no d-dependence)
-          cross_qp_r[n, d, w] = cross2(q_p[n,w], dir[n,d])  [N, D, W]
-          t[n, d, w]    = cross_qp_s[n,w] / rxs[n,d,w]     [N, D, W]
-          u[n, d, w]    = cross_qp_r[n,d,w] / rxs[n,d,w]   [N, D, W]
-
-        Returns: [N, D] distances clipped to [0, max_range].
-        """
         N, D = positions.shape[0], directions_per_agent.shape[1]
         W = a_pts.shape[0]
 
@@ -516,10 +381,7 @@ class MultiRobotEnv:
         return np.concatenate([self.positions, self.goals], axis=1)
 
     def _sample_non_colliding_points(self, n: int) -> np.ndarray:
-        """
-        Sample n points that are not too close to walls or each other.
-        Quick-and-dirty; good enough to get started.
-        """
+       
         pts: list[Tuple[float, float]] = []
         w = self.world_size
         max_tries = 10_000
@@ -581,10 +443,7 @@ class MultiRobotEnv:
         b: np.ndarray,          # segment end
         eps: float = 1e-9,
     ) -> float | None:
-        """
-        Return distance t >= 0 where p + t*r_hat intersects segment ab, else None.
-        Uses 2D ray-segment intersection via cross products.
-        """
+      
         s = b - a
         rxs = self._cross2(r_hat, s)
         if abs(rxs) < eps:
@@ -605,10 +464,7 @@ class MultiRobotEnv:
         max_range: float = 20.0,
         angle_offset: float = 0.0,
     ) -> np.ndarray:
-        """
-        Simple 2D LiDAR-lite: cast n_rays uniformly over [0, 2π).
-        Returns distances shape (n_rays,), each in [0, max_range].
-        """
+      
         dists = np.full((n_rays,), max_range, dtype=float)
 
         # Pre-pack wall endpoints
@@ -635,24 +491,7 @@ class MultiRobotEnv:
         center_angles: np.ndarray | None = None,
         cone_half_angle: float = np.pi,
     ) -> np.ndarray:
-        """
-        Returns LiDAR distances for all agents simultaneously: shape (N, n_rays).
-
-        Vectorized over N agents × n_rays × W walls using
-        _batched_ray_wall_distances_per_agent.  Zero Python loops at runtime.
-
-        Parameters
-        ----------
-        center_angles : None (default)
-            Full 360° sweep.  All agents share identical evenly-spaced ray directions.
-        center_angles : np.ndarray [N]
-            Per-agent forward-cone scan.  Each agent fires n_rays evenly spread
-            across [center - cone_half_angle, center + cone_half_angle].
-            Used by BugController for directional wall detection.
-        cone_half_angle : float
-            Half-width of the cone in radians.  Ignored when center_angles is None.
-            Default π = full 360° (same as no cone).
-        """
+        
         assert self.positions is not None
         N = self.n_agents
         a_pts, b_pts = self._wall_endpoints()
@@ -684,10 +523,7 @@ class MultiRobotEnv:
         max_range: float = 8.0,
         eps: float = 1e-6,
     ) -> tuple[bool, float]:
-        """
-        Returns (visible, dist_to_first_wall_along_goal_dir).
-        visible=True iff first wall along direction is farther than goal distance.
-        """
+      
         assert self.positions is not None and self.goals is not None
         p = np.asarray(self.positions[i], dtype=float)
         g = np.asarray(self.goals[i], dtype=float)
@@ -709,10 +545,7 @@ class MultiRobotEnv:
         return visible, best
 
     def segment_blocked_by_walls(self, p: np.ndarray, q: np.ndarray) -> bool:
-        """
-        True if segment pq intersects any wall segment (thin walls).
-        Useful for agent-agent 'visibility' edges.
-        """
+       
         # Segment intersection test in 2D: pq with ab
         def seg_intersect(p1, p2, a1, a2) -> bool:
             # orientation / ccw test
@@ -732,9 +565,7 @@ class MultiRobotEnv:
 
     @staticmethod
     def _distance_point_to_segment(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
-        """
-        Euclidean distance from point p to line segment ab.
-        """
+       
         ab = b - a
         if np.allclose(ab, 0):
             return float(np.linalg.norm(p - a))
