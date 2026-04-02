@@ -1,34 +1,3 @@
-"""
-GAT Deconfliction Controller Wrapper (Sheaf+GRU variant).
-
-Wraps SheafDeconflictionPolicy for integration with MultiRobotEnv.
-Uses priority-modulated per-agent repulsion in the harmonic potential field.
-Higher-priority agents receive larger repulsion radius and strength, causing
-lower-priority agents to naturally yield in the potential field rather than
-slowing down.
-
-Collision Pruning (applied at episode start):
-  A 100-step harmonic flow lookahead detects agents whose solo path would
-  hit a wall.  Those agents (and their goals) are permanently removed from
-  the environment before the episode begins.  Copied verbatim from
-  watch_rl_episode.py — prune_harmonic_colliders().
-
-Goal-Counting (copied verbatim from watch_rl_episode.py):
-  Only the first arrival at goal is counted.  If an agent is pushed off
-  its goal by harmonic repulsion and returns, no second credit is given.
-  at_goal agents:
-    - Excluded from graph edges (isolated nodes in build_graph).
-    - Excluded from the priority protocol (keep full harmonic velocity).
-    - Continue moving under the harmonic field.
-    - at_goal status persists for the rest of the episode.
-
-A* is never called anywhere in this controller.
-
-File: src/controllers/gat_deconfliction_controller.py
-Dependencies: PyTorch, torch_geometric, gat_deconfliction_policy,
-  gat_graph_builder, priority_protocol, harmonic_navigation
-"""
-
 import numpy as np
 import torch
 from typing import Dict, Optional, Tuple
@@ -61,38 +30,7 @@ def compute_repulsion_params(
     base_strength: float,
     at_goal: np.ndarray,
 ) -> tuple:
-    """
-    Compute per-agent repulsion radius and strength from priority rank.
 
-    Scaling rule (vectorized, no Python loops over agents):
-        increment[i] = (component_sizes[i] - ranks[i]) / component_sizes[i]
-        repulsion_radii[i]     = base_radius   + increment[i]
-        repulsion_strengths[i] = base_strength + increment[i]
-
-    increment is normalized by component size so it stays in (0, 1] regardless
-    of how many agents are in the component.  This prevents large components
-    (e.g. 39 agents) from producing repulsion radii that cover the entire map.
-
-    Example with base_radius=1.5, base_strength=5.0, component of n=3:
-        rank 0 → increment=1.000 → radius=2.5, strength=6.0   (highest priority)
-        rank 1 → increment=0.667 → radius=2.2, strength=5.7
-        rank 2 → increment=0.333 → radius=1.8, strength=5.3   (lowest priority)
-
-    Isolated agents (component_size=1, rank=0): increment=1.0 → base+1.
-    At-goal agents: excluded from ranking; receive increment=1.0 only.
-
-    Args:
-        ranks:           [N] int — rank within component (0=highest priority).
-        component_sizes: [N] int — size of each agent's component.
-        n_agents:        int.
-        base_radius:     float — baseline repulsion radius.
-        base_strength:   float — baseline repulsion strength.
-        at_goal:         [N] bool — excluded from priority modulation.
-
-    Returns:
-        repulsion_radii:     np.ndarray [N] float64
-        repulsion_strengths: np.ndarray [N] float64
-    """
     # Default increment=1.0 for at_goal and unranked agents
     effective_increment = np.ones(n_agents, dtype=np.float64)
 
@@ -109,18 +47,6 @@ def compute_repulsion_params(
 
 
 class GATDeconflictionController:
-    """
-    Wraps GATDeconflictionPolicy (Sheaf+GRU) for inference with MultiRobotEnv.
-
-    The policy outputs a priority_score per agent.
-    HarmonicPriorityManager converts these into final velocities via
-    the 1/(rank+1) schedule within each connected component.
-
-    Usage:
-        controller = GATDeconflictionController(policy, device)
-        controller.reset(env, n_agents=N)
-        velocities, info = controller.act(env, active_mask=mask, at_goal=at_goal)
-    """
 
     def __init__(
         self,
@@ -157,16 +83,7 @@ class GATDeconflictionController:
 
     @staticmethod
     def prune_harmonic_colliders(env) -> int:
-        """
-        Run the harmonic flow scan and permanently remove agents whose
-        trajectory would hit a wall from the environment.
 
-        Uses the same lookahead parameters as watch_rl_episode.prune_harmonic_colliders().
-        Mutates env.positions, env.goals, and env.n_agents in-place.
-
-        Returns:
-            Number of agents removed.
-        """
         controller = HarmonicNavigationController()
         controller.reset(env)
 
@@ -221,20 +138,7 @@ class GATDeconflictionController:
         active_mask: Optional[np.ndarray] = None,
         at_goal: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, Dict]:
-        """
-        Compute velocity commands for all agents.
 
-        Args:
-            env:         MultiRobotEnv instance with current state.
-            active_mask: [N] bool — collided agents (False) get zero velocity.
-                         If None, all agents are active.
-            at_goal:     [N] bool — goal-reached agents excluded from graph and
-                         priority protocol.  If None, treated as all False.
-
-        Returns:
-            velocities: [N, 2] numpy velocity vectors.
-            info:       dict with diagnostic info.
-        """
         if self.hidden_states is None:
             raise RuntimeError("Must call reset() before act()")
 
