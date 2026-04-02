@@ -1,0 +1,40 @@
+================================================
+SHEAF EMBEDDING ANALYSIS REPORT
+Checkpoint: checkpoints/sheaf_deconfliction_v2/policy_ep669.pt
+Episode:    ep0095_s95.json
+================================================
+
+PCA DIAGNOSTICS (GRU outputs)
+  Explained variance (PC1):        0.352
+  Explained variance (PC1+PC2):    0.559
+  Interpretation: Structured — embeddings organise along dominant axes
+
+UMAP DIAGNOSTICS
+  Available: True
+
+PRIORITY SCORE STATISTICS
+  Mean:    0.5335
+  Std:     0.1488
+  Min:     0.1608
+  Max:     0.9859
+  Range:   0.8251  (> 0.3 = agents assigned meaningfully different priorities)
+
+SHEAF CONSISTENCY
+  Mean sheaf loss layer 1:  0.4886
+  Mean sheaf loss layer 2:  3.4529
+  Note: layer 2 loss > layer 1 is expected — layer 2 resolves deeper inconsistencies
+        that layer 1 did not fully reconcile.
+
+PRIORITY CORRELATIONS
+  vs min TTC:       positive (r=0.280)
+  vs dist_to_goal:  positive (r=0.762)
+  Note: a positive r(priority, dist_to_goal) means agents farther from their goal
+        receive higher priority — consistent with urgency-based deconfliction.
+
+OVERALL ASSESSMENT
+  Embedding structure: [OK] Structured
+  Priority range:      [OK] Differentiated
+  The model has learned a structured priority signal — embeddings are organised and agents receive meaningfully different priorities.
+
+Figures saved to: C:\Users\Logan\Desktop\Python Programs\multi_robot_nav\visualization\sheaf_analysis_output/
+================================================
